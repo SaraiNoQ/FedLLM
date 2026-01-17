@@ -1,40 +1,84 @@
-# Fed-VEMoE Demo (Minimal, Research-Oriented Skeleton)
+# Fed-VEMoE Project (Cross-silo, Cross-task) — Full Research Skeleton
 
-This is a **minimal demo** codebase for the idea discussed:
-**Fed-VEMoE + Hierarchical Bayesian Routing (domain prior + token evidence)**,
-with **LoRA expert bank**, **cross-silo** simulation, and a **secure-aggregation *simulation***
-(i.e., server only keeps aggregated sums and discards per-client updates).
+This project upgrades the original demo into a **dataset-driven, evaluation-ready** federated simulation:
 
-> IMPORTANT:
-> - This demo is intended as a *starting point* for research code.
-> - For real 7B training, use 4-bit loading (QLoRA-style) and enable gradient checkpointing.
-> - Secure aggregation is **simulated** here; replace `privacy.SecureAggSim` with a real protocol in deployment.
+✅ Real dataset loader for **Natural Instructions / Super-NaturalInstructions-style** task bank  
+✅ Per-client task assignment (translation / reasoning / code / rewriting / etc. via keyword search in task definitions)  
+✅ Hierarchical routing:
+- Domain-level responsibilities `r_{i,k}` (probe losses)
+- Token-level posterior mixture `α_{t,k} = softmax(log r + u/γ)` inside the active expert set
 
-## Quickstart (Toy Run)
+✅ Server-oblivious assignment via secure aggregation **simulation** (server only sees sums)  
+✅ Open-world management (birth / prune / merge) with Kmax slots  
+✅ Evaluation: PPL, ROUGE-L, Exact Match (EM); per-task performance + negative transfer  
+✅ Logging + plotting scripts (expert utilization, worst-client metric, negative transfer)
+
+> Notes:
+> - Secure aggregation is simulated (`privacy.SecureAggSim`). Replace with a real protocol for deployment.
+> - For 7B, use 4-bit loading (QLoRA-style) and gradient checkpointing.
+> - This code is designed for **cross-silo simulation** (sequential client execution); parallelization is a later engineering step.
+
+## Install
 
 ```bash
-pip install -U torch transformers accelerate datasets bitsandbytes
-python run.py --model_name Qwen/Qwen2.5-7B-Instruct --use_4bit 1 --num_rounds 10 --num_clients 3 --num_experts 4
+pip install -U torch transformers accelerate datasets bitsandbytes evaluate matplotlib pandas
 ```
 
-If you cannot load a 7B model yet, start with a smaller Llama-like model (still has q_proj/v_proj):
+## Default dataset source (Natural Instructions)
+We use the HuggingFace dataset:
+- `Muennighoff/natural-instructions` which contains fields: `task_name`, `definition`, `inputs`, `targets` and splits `train/validation/test`.
+
+You can verify fields in the dataset viewer on HF.
+
+## Run federated training (toy rounds, real tasks)
+
+  #### --dataset_name Muennighoff/natural-instructions \
+
 ```bash
-python run.py --model_name TinyLlama/TinyLlama-1.1B-Chat-v1.0 --use_4bit 1
+python run_fed.py \
+  --model_name Qwen/Qwen2.5-7B-Instruct \
+  --dataset_name ./natural-instructions \
+  --streaming 1 \
+  --num_clients 4 \
+  --client_task_mode keyword \
+  --keyword_categories translation reasoning code rewriting \
+  --tasks_per_category 1 \
+  --num_rounds 3 \
+  --k_init 4 --k_max 12 \
+  --top_m 2 \
+  --use_4bit 1 \
+  --seq_len 768 \
+  --eval_every 1 \
+  --log_dir runs/exp1
 ```
 
-## What is implemented
+## Run local baselines (for negative transfer)
+```bash
+python run_local_baselines.py \
+  --model_name mistralai/Mistral-7B-Instruct-v0.3 \
+  --dataset_name Muennighoff/natural-instructions \
+  --streaming 1 \
+  --num_clients 6 \
+  --client_task_mode keyword \
+  --keyword_categories translation reasoning code rewriting \
+  --tasks_per_category 1 \
+  --total_steps 200 \
+  --use_4bit 1 \
+  --out_json runs/exp1/local_baselines.json
+```
 
-- Expert bank: shared expert (id=0) + K specialized experts (1..K).
-- Domain routing (E-step): probe losses -> responsibilities r_{i,k}.
-- Token routing: α_{t,k} = softmax(log r_{i,k} + u_{t,k}/γ) within Ω_i.
-- Local training updates LoRA of active experts + private token-router.
-- Uploads are aggregated at server (SecureAggSim): S_k and U_k.
-- Server updates experts: ΔW_k += η * U_k / max(S_k, ε).
+Then re-run `run_fed.py` with:
+```bash
+--local_baseline_json runs/exp1/local_baselines.json
+```
 
-## What is left as “paper engineering”
+## Plot
+```bash
+python scripts/plot_logs.py --log_dir runs/exp1
+```
 
-- Open-world expert birth/prune/merge (stubbed in server.py).
-- Better probing (more stable proxies, candidate filtering).
-- Proper DP accounting (we include clip+noise hooks).
-- Real multi-task datasets and evaluation suites.
+Outputs:
+- `expert_utilization.png`
+- `worst_client.png`
+- `negative_transfer.png`
 

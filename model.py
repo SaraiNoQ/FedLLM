@@ -1,5 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass
+import importlib.util
 from typing import Tuple, Optional
 
 import torch
@@ -27,15 +28,27 @@ def load_base_model_with_multiexpert_lora(
     device_map: str = "auto",
 ) -> LoadedModel:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    compute_dtype = (
+        torch.bfloat16
+        if torch.cuda.is_available() and torch.cuda.is_bf16_supported()
+        else (torch.float16 if torch.cuda.is_available() else torch.float32)
+    )
 
     quant_config = None
     if use_4bit:
-        quant_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_compute_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float16,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_use_double_quant=True,
-        )
+        if not torch.cuda.is_available():
+            print("[WARN] CUDA not available; disabling 4-bit quantization.")
+            use_4bit = False
+        if importlib.util.find_spec("bitsandbytes") is None:
+            print("[WARN] bitsandbytes not found; disabling 4-bit quantization.")
+            use_4bit = False
+        else:
+            quant_config = BitsAndBytesConfig(
+                load_in_4bit=True,
+                bnb_4bit_compute_dtype=compute_dtype,
+                bnb_4bit_quant_type="nf4",
+                bnb_4bit_use_double_quant=True,
+            )
 
     model_dir = snapshot_download(model_name)
 
@@ -46,7 +59,7 @@ def load_base_model_with_multiexpert_lora(
     model = AutoModelForCausalLM.from_pretrained(
         model_dir,
         quantization_config=quant_config,
-        torch_dtype=torch.bfloat16 if torch.cuda.is_available() else torch.float16,
+        torch_dtype=compute_dtype,
         device_map=device_map,
     )
 
@@ -54,10 +67,15 @@ def load_base_model_with_multiexpert_lora(
     for p in model.parameters():
         p.requires_grad_(False)
 
-    # Routing context (will be set per client/phase)
+    # Minimal routing context; clients will overwrite fields before forward
+    if num_total_experts == 1:
+        active = torch.tensor([0], device=device)
+    else:
+        active = torch.tensor([0, 1], device=device)
+
     routing_ctx = RoutingContext(
         mode="probe",
-        active_experts=torch.tensor([0, 1], device=device),
+        active_experts=active,
         domain_prior=None,
         token_router=None,
         gamma=1.0,
@@ -81,6 +99,8 @@ def load_base_model_with_multiexpert_lora(
     # Enable gradient checkpointing if possible
     if hasattr(model, "gradient_checkpointing_enable"):
         model.gradient_checkpointing_enable()
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
 
     model.train()
     return LoadedModel(model=model, tokenizer=tokenizer, device=device, routing_ctx=routing_ctx)

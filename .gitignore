@@ -1,0 +1,4 @@
+natural-instructions/
+__pycache__/
+runs/
+*.pyc
