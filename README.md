@@ -82,3 +82,10 @@ Outputs:
 - `worst_client.png`
 - `negative_transfer.png`
 
+### plot
+
+```bash
+python -m scripts.plot_paper_figure \
+  --log_dir runs/exp4 \
+  --dataset_name ./natural-instructions
+```

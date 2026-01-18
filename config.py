@@ -58,7 +58,7 @@ class FedVEMoEConfig:
 
 @dataclass
 class DataConfig:
-    dataset_name: str = "Muennighoff/natural-instructions"
+    dataset_name: str = "./natural-instructions"
     streaming: bool = True
     # Task assignment modes:
     # - "explicit": pass a JSON file mapping client->task_names
