@@ -39,17 +39,17 @@ python run_fed.py \
   --model_name Qwen/Qwen2.5-7B-Instruct \
   --dataset_name ./natural-instructions \
   --streaming 1 \
-  --num_clients 4 \
+  --num_clients 5 \
   --client_task_mode keyword \
   --keyword_categories translation reasoning code rewriting \
-  --tasks_per_category 1 \
-  --num_rounds 3 \
-  --k_init 4 --k_max 12 \
+  --tasks_per_category 3 \
+  --num_rounds 10 \
+  --k_init 3 --k_max 12 \
   --top_m 2 \
   --use_4bit 1 \
-  --seq_len 768 \
+  --seq_len 2048 \
   --eval_every 1 \
-  --log_dir runs/exp1
+  --log_dir runs/exp3
 ```
 
 ## Run local baselines (for negative transfer)

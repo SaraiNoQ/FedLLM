@@ -229,6 +229,15 @@ def main():
 
                 logger.log(rec)
                 print(f"[Eval c{client.client_id}] PPL={ppl['ppl']:.2f} ROUGE-L={gen['rougeL']:.3f} EM={gen['em']:.3f}")
+    
+    save_path_bank = os.path.join(args.log_dir, "global_bank.pt")
+    save_path_pi = os.path.join(args.log_dir, "global_pi.pt")
+    
+    # 保存 Expert Bank (LoRA 参数)
+    torch.save(server.global_bank, save_path_bank)
+    # 保存 Prior 分布
+    torch.save(server.state.pi, save_path_pi)
+    print(f"Model saved to:\n  - {save_path_bank}\n  - {save_path_pi}")
 
     print("\nDone. Logs in:", os.path.join(args.log_dir, "metrics.jsonl"))
 

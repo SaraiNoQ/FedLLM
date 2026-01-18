@@ -49,85 +49,130 @@ def normalize_text(s: str) -> str:
     return re.sub(r"\s+", " ", (s or "").strip().lower())
 
 # -------- Task selection --------
-_CATEGORY_KEYWORDS = {
-    "translation": ["translate", "translation", "convert to", "from english", "to english"],
-    "reasoning": ["logical", "reason", "deduce", "inference", "entail", "contradict", "premise"],
-    "code": ["sql", "python", "code", "program", "function", "bug", "compile"],
-    "rewriting": ["paraphrase", "rewrite", "rephrase", "summarize", "simplify", "title"],
+# 10 Major Categories mapping logic
+CAT_QA = "QA"              # QA / Question Answering / Reading Comprehension
+CAT_CLS = "Classification" # Sentiment, NLI, Topic, Toxicity, Choice
+CAT_EXT = "Extraction"     # NER, Tagging, Slot Filling, Span Extraction
+CAT_SUM = "Summarization"  # Summarization
+CAT_REW = "Rewriting"      # Paraphrase, Style Transfer, Simplification
+CAT_TRN = "Translation"    # Translation
+CAT_DIA = "Dialogue"       # Dialogue, Chat
+CAT_REA = "Reasoning"      # Math, Code, Logic, Program
+CAT_COR = "Correction"     # Grammar, Spelling, GEC
+CAT_GEN = "Generation"     # Open generation, Story, Poem, Data-to-text
+
+ALL_CATEGORIES = [CAT_QA, CAT_CLS, CAT_EXT, CAT_SUM, CAT_REW, CAT_TRN, CAT_DIA, CAT_REA, CAT_COR, CAT_GEN]
+
+# Keywords priority list. Order matters within the list for specificity.
+# Keys are the Category Names. Values are list of lowercase keywords to match in definition/task_name.
+_CATEGORY_DEFINITIONS = {
+    CAT_TRN: ["translation", "translate", "convert to", "from english", "to english", "german", "french", "spanish"],
+    CAT_COR: ["correction", "grammar", "spelling", "punctuation", "gec", "correct the", "fix the", "error detection"],
+    CAT_REA: ["math", "arithmetic", "algebra", "calculation", "reasoning", "logical", "deduce", "inference", "python", "code", "sql", "program", "compile", "puzzle"],
+    CAT_SUM: ["summariz", "summary", "abstractive", "compression", "headline"],
+    CAT_DIA: ["dialogue", "conversation", "chatbot", "response generation", "interact"],
+    CAT_EXT: ["extract", "ner", "named entity", "entity", "tagging", "slot filling", "labeling", "span"],
+    CAT_QA:  ["question answering", "answer generation", "reading comprehension", "answer the question", "qa", "mrc", "context"],
+    CAT_CLS: ["classification", "classify", "sentiment", "nli", "entailment", "hypothesis", "premise", "stance", "topic", "category", "selection", "multiple choice", "choose", "toxicity"],
+    CAT_REW: ["paraphrase", "rewrite", "rephrase", "simplify", "simplification", "style transfer", "expansion", "edit"],
+    CAT_GEN: ["generate a story", "write a story", "poem", "title generation", "data-to-text", "creative writing", "generate a description"],
 }
 
-def choose_tasks_by_keyword_scan(
+def classify_task_by_definition(defn: str, tname: str) -> str:
+    """Classify a task into one of the 10 categories based on text matching."""
+    text = normalize_text(defn + " " + tname)
+    
+    # Check specific categories first
+    for cat, keywords in _CATEGORY_DEFINITIONS.items():
+        for kw in keywords:
+            if kw in text:
+                return cat
+    
+    # Fallback heuristics for broader matches
+    if "generate" in text:
+        return CAT_GEN
+    
+    # Default fallback if nothing matches
+    return "Misc"
+
+def scan_and_pool_tasks(
     dataset_name: str,
     split: str,
-    categories: Sequence[str],
-    tasks_per_category: int,
+    target_categories: Sequence[str],
+    min_tasks_per_category: int,
     seed: int = 42,
-    max_scan_examples: int = 200_000,
+    max_scan_examples: int = 150_000,
 ) -> Dict[str, List[str]]:
-    """Scan streaming dataset and pick unique task_names per category.
-
-    This avoids enumerating all tasks (which can be huge).
-    We match categories by searching keywords in `definition`.
+    """
+    Scans the dataset and buckets unique task_names into the 10 categories.
     """
     rng = random.Random(seed)
-    categories = list(categories)
-    selected: Dict[str, List[str]] = {c: [] for c in categories}
+    
+    # Initialize pools
+    pools: Dict[str, List[str]] = {c: [] for c in target_categories}
+    pools["Misc"] = [] # Buffer for uncategorized
+    
     seen_tasks = set()
+    ds = _load_dataset_safe(dataset_name, split=split, streaming=True, seed=seed, shuffle_buffer=10_000)
 
-    ds = _load_dataset_safe(dataset_name, split=split, streaming=True, seed=seed, shuffle_buffer=20_000)
-
-    def match_cat(defn: str, cat: str) -> bool:
-        defn_n = normalize_text(defn)
-        for kw in _CATEGORY_KEYWORDS.get(cat, [cat]):
-            if kw in defn_n:
-                return True
-        return False
-
-    scanned = 0
+    scanned_count = 0
+    full_categories = 0
+    
     for ex in ds:
-        scanned += 1
-        if scanned > max_scan_examples:
-            break
-        tname = ex.get("task_name", None)
+        scanned_count += 1
+        tname = ex.get("task_name")
         if not tname or tname in seen_tasks:
             continue
+
         defn = ex.get("definition", "")
-        for c in categories:
-            if len(selected[c]) >= tasks_per_category:
-                continue
-            if match_cat(defn, c):
-                selected[c].append(tname)
-                seen_tasks.add(tname)
-        if all(len(selected[c]) >= tasks_per_category for c in categories):
+        
+        # Determine category
+        cat = classify_task_by_definition(defn, tname)
+        
+        # Store if it's a target category (or Misc)
+        if cat in pools:
+            pools[cat].append(tname)
+            seen_tasks.add(tname)
+        elif "Misc" in pools:
+             pools["Misc"].append(tname)
+             seen_tasks.add(tname)
+
+        # Check stopping condition
+        # We stop if we have scanned too much OR we have enough for all requested categories
+        if scanned_count > max_scan_examples:
+            print(f"[Info] Max scan limit reached ({max_scan_examples}).")
+            break
+            
+        # Optimization: Early exit if all pools are saturated (e.g. 2x the needed amount)
+        saturated = True
+        for c in target_categories:
+            if len(pools[c]) < min_tasks_per_category:
+                saturated = False
+                break
+        if saturated:
+            print(f"[Info] All categories saturated with at least {min_tasks_per_category} tasks.")
             break
 
-    # If some categories are empty, fall back to random tasks encountered
-    if any(len(v) < tasks_per_category for v in selected.values()):
-        # collect additional task names
-        more = []
-        ds2 = _load_dataset_safe(dataset_name, split=split, streaming=True, seed=seed)
-        for ex in ds2:
-            tname = ex.get("task_name")
-            if tname and tname not in seen_tasks:
-                more.append(tname)
-            if len(more) > 10_000:
-                break
-        rng.shuffle(more)
-        for c in categories:
-            while len(selected[c]) < tasks_per_category and more:
-                selected[c].append(more.pop())
-    return selected
+    # Log stats
+    print(f"[Info] Scanned {scanned_count} examples. Found unique tasks per category:")
+    for c in target_categories:
+        print(f"  - {c}: {len(pools[c])}")
+    
+    return pools
 
 def make_client_task_map(
     num_clients: int,
     dataset_name: str,
     mode: str,
-    categories: Sequence[str],
+    categories: Sequence[str], # Ignored in explicit, used to filter in keyword mode if needed
     tasks_per_category: int,
     seed: int = 42,
     explicit_json: Optional[Dict] = None,
 ) -> Dict[int, List[str]]:
-    """Return mapping client_id -> list of task_names."""
+    """
+    Assigns each client a specific Task Category (from the 10 types),
+    then assigns 'tasks_per_category' UNIQUE tasks to that client.
+    """
     if mode == "explicit":
         assert explicit_json is not None, "explicit mode requires json"
         mapping = {}
@@ -135,21 +180,94 @@ def make_client_task_map(
             mapping[int(k)] = v if isinstance(v, list) else [v]
         return mapping
 
-    # keyword mode
-    picked = choose_tasks_by_keyword_scan(
-        dataset_name=dataset_name,
-        split="train",
-        categories=categories,
-        tasks_per_category=tasks_per_category,
-        seed=seed,
+    # 1. Assign a Category to each Client
+    # If user provided specific categories in argument, use those cyclically. 
+    # Otherwise use ALL_CATEGORIES.
+    available_cats = list(categories) if categories else ALL_CATEGORIES
+    client_cats = [available_cats[i % len(available_cats)] for i in range(num_clients)]
+    
+    # 2. Determine how many tasks we need to fetch total per category
+    from collections import Counter
+    cat_counts = Counter(client_cats)
+    
+    # We ask for a bit more than strictly needed to have variety
+    needed_per_cat = max(cat_counts.values()) * tasks_per_category
+    
+    # 3. Scan dataset to build pools
+    # We pass 'available_cats' to ensure we focus on finding those
+    pools = scan_and_pool_tasks(
+        dataset_name=dataset_name, 
+        split="train", 
+        target_categories=available_cats, 
+        min_tasks_per_category=needed_per_cat, 
+        seed=seed
     )
-    tasks_flat = []
-    for c in categories:
-        tasks_flat.extend(picked[c])
-    # assign round-robin
+    
+    # 4. Distribute tasks ensuring uniqueness
     mapping = {}
+    global_used_tasks = set()
+    
+    # Helper to get unique tasks from a pool
+    def pop_unique_from_pool(pool_list, n):
+        selected = []
+        remainder = []
+        for t in pool_list:
+            if len(selected) < n:
+                if t not in global_used_tasks:
+                    selected.append(t)
+                    global_used_tasks.add(t)
+                else:
+                    remainder.append(t) # Already used by another client, put back
+            else:
+                remainder.append(t)
+        return selected, remainder
+
     for i in range(num_clients):
-        mapping[i] = [tasks_flat[i % len(tasks_flat)]]
+        target_cat = client_cats[i]
+        required_n = tasks_per_category
+        
+        my_tasks = []
+        
+        # A. Try to take from primary category
+        found, left_over = pop_unique_from_pool(pools.get(target_cat, []), required_n)
+        pools[target_cat] = left_over # Update pool
+        my_tasks.extend(found)
+        
+        # B. If not enough, try to take from Misc
+        if len(my_tasks) < required_n:
+            needed = required_n - len(my_tasks)
+            found, left_over = pop_unique_from_pool(pools.get("Misc", []), needed)
+            pools["Misc"] = left_over
+            my_tasks.extend(found)
+            
+        # C. If still not enough, steal from OTHER categories (as long as unique)
+        if len(my_tasks) < required_n:
+            other_cats = [c for c in available_cats if c != target_cat]
+            random.shuffle(other_cats)
+            for oc in other_cats:
+                needed = required_n - len(my_tasks)
+                if needed <= 0: break
+                found, left_over = pop_unique_from_pool(pools.get(oc, []), needed)
+                pools[oc] = left_over
+                my_tasks.extend(found)
+        
+        # D. Final Resort: If the dataset scan yielded extremely few tasks total
+        # We allow reusing tasks that OTHER clients have used (breaking uniqueness only for survival)
+        if len(my_tasks) < required_n:
+             all_found_tasks = list(global_used_tasks)
+             needed = required_n - len(my_tasks)
+             if all_found_tasks:
+                 # Sample randomly from what we have
+                 refill = [random.choice(all_found_tasks) for _ in range(needed)]
+                 my_tasks.extend(refill)
+
+        mapping[i] = my_tasks
+        
+    # Print Allocation Summary
+    print("\n[Data Allocation Summary]")
+    for cid, tasks in mapping.items():
+        print(f"  Client {cid} ({client_cats[cid]}): {len(tasks)} tasks -> {tasks}")
+
     return mapping
 
 # -------- Iterable datasets --------

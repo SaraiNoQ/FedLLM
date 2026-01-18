@@ -354,6 +354,9 @@ class Client:
         max_examples = max_examples if max_examples is not None else self.cfg.max_gen_eval_examples
         preds, refs = [], []
         rouges, ems = [], []
+        
+        # New: Track metrics per task_name
+        by_task_metrics = {} # task_name -> {'rouges': [], 'ems': []}
 
         seen = 0
         for batch in loader:
@@ -363,6 +366,8 @@ class Client:
                     break
                 prompt = batch["prompt_text"][i]
                 ref = batch["target_text"][i]
+                tname = batch["task_name"][i] # Extract task name from batch
+
                 enc = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=False).to(self.device)
                 gen = self.model.generate(
                     **enc,
@@ -377,19 +382,39 @@ class Client:
                 cont_ids = gen_ids[prompt_len:]
                 pred = self.tokenizer.decode(cont_ids, skip_special_tokens=True)
 
-                rouges.append(rouge_l_f1(pred, ref))
-                ems.append(exact_match(pred, ref))
+                r_score = rouge_l_f1(pred, ref)
+                e_score = exact_match(pred, ref)
+
+                rouges.append(r_score)
+                ems.append(e_score)
                 preds.append(pred)
                 refs.append(ref)
+                
+                # Group by task
+                if tname not in by_task_metrics:
+                    by_task_metrics[tname] = {"rouges": [], "ems": []}
+                by_task_metrics[tname]["rouges"].append(r_score)
+                by_task_metrics[tname]["ems"].append(e_score)
+
                 seen += 1
             if seen >= max_examples:
                 break
+        
+        # Aggregate per-task metrics
+        by_task_results = {}
+        for tname, data in by_task_metrics.items():
+            by_task_results[tname] = {
+                "rougeL": aggregate_metric(data["rouges"]),
+                "em": aggregate_metric(data["ems"]),
+                "count": len(data["rouges"])
+            }
 
         return {
             "rougeL": aggregate_metric(rouges),
             "em": aggregate_metric(ems),
             "active": active,
             "n": seen,
+            "by_task": by_task_results # Return the grouped metrics
         }
 
     # ---------------- Helpers: bank IO / sparse slicing ----------------
