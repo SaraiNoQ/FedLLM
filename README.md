@@ -36,33 +36,33 @@ You can verify fields in the dataset viewer on HF.
 
 ```bash
 python run_fed.py \
-  --model_name Qwen/Qwen2.5-7B-Instruct \
+  --model_name Qwen/Qwen2.5-0.5B-Instruct \
   --dataset_name ./natural-instructions \
   --streaming 1 \
   --num_clients 5 \
   --client_task_mode keyword \
-  --keyword_categories translation reasoning code rewriting \
-  --tasks_per_category 3 \
+  --keyword_categories QA_Silo Logic_Reasoning_Silo Sentiment_Silo Generation_Silo Language_Trans_Silo \
+  --tasks_per_category 5 \
   --num_rounds 10 \
   --k_init 3 --k_max 12 \
   --top_m 2 \
   --use_4bit 1 \
   --seq_len 2048 \
   --eval_every 1 \
-  --log_dir runs/exp3
+  --log_dir runs/exp6
 ```
 
 ## Run local baselines (for negative transfer)
 ```bash
 python run_local_baselines.py \
-  --model_name mistralai/Mistral-7B-Instruct-v0.3 \
-  --dataset_name Muennighoff/natural-instructions \
+  --model_name Qwen/Qwen2.5-0.5B-Instruct \
+  --dataset_name ./natural-instructions \
   --streaming 1 \
-  --num_clients 6 \
+  --num_clients 5 \
   --client_task_mode keyword \
-  --keyword_categories translation reasoning code rewriting \
-  --tasks_per_category 1 \
-  --total_steps 200 \
+  --keyword_categories QA_Silo Logic_Reasoning_Silo Sentiment_Silo Generation_Silo Language_Trans_Silo \
+  --tasks_per_category 5 \
+  --total_steps 100 \
   --use_4bit 1 \
   --out_json runs/exp1/local_baselines.json
 ```
@@ -89,3 +89,9 @@ python -m scripts.plot_paper_figure \
   --log_dir runs/exp4 \
   --dataset_name ./natural-instructions
 ```
+
+```bash
+nohup python run_fedavg.py --model_name Qwen/Qwen2.5-0.5B-Instruct --num_clients 5 --keyword_categories QA_Silo Logic_Reasoning_Silo Sentiment_Silo Generation_Silo Language_Trans_Silo --tasks_per_category 5 --log_dir runs/fedavg_baseline > runs/fedavg_baseline/output.log 2>&1 &
+```
+
+QA_Silo Logic_Reasoning_Silo Sentiment_Silo Generation_Silo Language_Trans_Silo

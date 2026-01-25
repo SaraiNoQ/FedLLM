@@ -18,7 +18,7 @@ from eval_metrics import rouge_l_f1, exact_match, aggregate_metric
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument("--model_name", type=str, default="mistralai/Mistral-7B-Instruct-v0.3")
+    p.add_argument("--model_name", type=str, default="Qwen/Qwen2.5-7B-Instruct")
     p.add_argument("--use_4bit", type=int, default=1)
 
     p.add_argument("--dataset_name", type=str, default="Muennighoff/natural-instructions")
@@ -39,7 +39,7 @@ def parse_args():
     p.add_argument("--max_gen_eval_examples", type=int, default=32)
     p.add_argument("--gen_max_new_tokens", type=int, default=64)
 
-    p.add_argument("--eval_split", type=str, default="test", choices=["train","val","test"])
+    p.add_argument("--eval_split", type=str, default="train", choices=["train","val","test"])
     p.add_argument("--out_json", type=str, default="runs/exp1/local_baselines.json")
     return p.parse_args()
 
@@ -168,7 +168,6 @@ def main():
         mode=dcfg.client_task_mode,
         categories=dcfg.keyword_categories,
         tasks_per_category=dcfg.tasks_per_category,
-        streaming=dcfg.streaming,
         seed=dcfg.seed,
         explicit_json=explicit,
     )
@@ -192,7 +191,6 @@ def main():
         client_task_map=client_task_map,
         seq_len=args.seq_len,
         micro_batch=args.micro_batch,
-        streaming=dcfg.streaming,
         seed=dcfg.seed,
         train_max_examples=None,
         eval_max_examples=512,

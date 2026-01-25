@@ -78,22 +78,26 @@ _CATEGORY_DEFINITIONS = {
     CAT_GEN: ["generate a story", "write a story", "poem", "title generation", "data-to-text", "creative writing", "generate a description"],
 }
 
+REFINED_MAPPING = {
+    "QA_Silo": ["qa", "question_answering", "reading_comprehension", "answer_generation", "context"],
+    "Extraction_Silo": ["extraction", "ner", "tagging", "identification", "labeling", "slot", "entity"],
+    "Sentiment_Silo": ["sentiment", "emotion", "opinion", "toxicity", "hate_speech", "irony", "rating"],
+    "Logic_Reasoning_Silo": ["math", "logic", "code", "program", "arithmetic", "reasoning", "nli", "entailment", "inference"],
+    "Language_Trans_Silo": ["translation", "translate", "rewriting", "paraphrase", "correction", "gec", "simplification", "editing", "style_transfer"],
+    "Generation_Silo": ["generation", "summarization", "story", "poem", "write", "creative", "title", "abstractive", "caption"],
+    "Categorization_Silo": ["classification", "classify", "topic", "category", "intent", "detection"]
+}
+
 def classify_task_by_definition(defn: str, tname: str) -> str:
-    """Classify a task into one of the 10 categories based on text matching."""
-    text = normalize_text(defn + " " + tname)
+    """优化后的分类逻辑：优先根据任务名称(tname)进行语义聚类"""
+    text = (tname + " " + defn).lower()
     
-    # Check specific categories first
-    for cat, keywords in _CATEGORY_DEFINITIONS.items():
-        for kw in keywords:
-            if kw in text:
-                return cat
+    # 按照 REFINED_MAPPING 的顺序进行匹配
+    for silo, keywords in REFINED_MAPPING.items():
+        if any(kw in text for kw in keywords):
+            return silo
     
-    # Fallback heuristics for broader matches
-    if "generate" in text:
-        return CAT_GEN
-    
-    # Default fallback if nothing matches
-    return "Misc"
+    return "General_Silo"
 
 def scan_and_pool_tasks(
     dataset_name: str,
@@ -183,7 +187,7 @@ def make_client_task_map(
     # 1. Assign a Category to each Client
     # If user provided specific categories in argument, use those cyclically. 
     # Otherwise use ALL_CATEGORIES.
-    available_cats = list(categories) if categories else ALL_CATEGORIES
+    available_cats = categories if categories else list(REFINED_MAPPING.keys())
     client_cats = [available_cats[i % len(available_cats)] for i in range(num_clients)]
     
     # 2. Determine how many tasks we need to fetch total per category
@@ -257,13 +261,11 @@ def make_client_task_map(
              all_found_tasks = list(global_used_tasks)
              needed = required_n - len(my_tasks)
              if all_found_tasks:
-                 # Sample randomly from what we have
                  refill = [random.choice(all_found_tasks) for _ in range(needed)]
                  my_tasks.extend(refill)
 
         mapping[i] = my_tasks
         
-    # Print Allocation Summary
     print("\n[Data Allocation Summary]")
     for cid, tasks in mapping.items():
         print(f"  Client {cid} ({client_cats[cid]}): {len(tasks)} tasks -> {tasks}")
