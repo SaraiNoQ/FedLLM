@@ -20,7 +20,7 @@ class FedVEMoEConfig:
     # optimization
     local_steps: int = 2
     lr_server: float = 1.0
-    lr_client: float = 2e-4
+    lr_client: float = 5e-4
     weight_decay: float = 0.0
 
     # lora

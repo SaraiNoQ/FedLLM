@@ -41,7 +41,7 @@ def parse_args():
 
     # eval/log
     p.add_argument("--eval_every", type=int, default=1)
-    p.add_argument("--eval_split", type=str, default="train", choices=["val","test"])
+    p.add_argument("--eval_split", type=str, default="val", choices=["train", "val", "test"])
     p.add_argument("--log_dir", type=str, default="runs/exp1")
     p.add_argument("--local_baseline_json", type=str, default="")
 
@@ -203,8 +203,18 @@ def main():
         # Evaluation
         if args.eval_every > 0 and ((rnd + 1) % args.eval_every == 0):
             for client in clients:
-                ppl = client.evaluate_ppl(bank=server.global_bank, pi=server.state.pi, active_specialized=server.state.active_specialized, split=args.eval_split)
-                gen = client.evaluate_generation(bank=server.global_bank, pi=server.state.pi, active_specialized=server.state.active_specialized, split=args.eval_split)
+                ppl = client.evaluate_ppl(
+                    bank=server.global_bank, 
+                    pi=server.state.pi, 
+                    active_specialized=server.state.active_specialized, 
+                    split=args.eval_split 
+                )
+                gen = client.evaluate_generation(
+                    bank=server.global_bank, 
+                    pi=server.state.pi, 
+                    active_specialized=server.state.active_specialized, 
+                    split=args.eval_split
+                )
 
                 rec = {
                     "type": "client_eval",

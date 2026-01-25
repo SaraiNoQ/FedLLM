@@ -297,6 +297,7 @@ class SNIIterable(IterableDataset):
         seed: int = 42,
         max_examples: Optional[int] = None,
         shuffle_buffer: int = 10_000,
+        subsample_mode: str = "all",  # 新增: "all", "train_80", "val_20"
     ):
         super().__init__()
         self.dataset_name = dataset_name
@@ -307,20 +308,38 @@ class SNIIterable(IterableDataset):
         self.seed = seed
         self.max_examples = max_examples
         self.shuffle_buffer = shuffle_buffer
+        self.subsample_mode = subsample_mode  # 保存模式
 
     def _iter_text(self) -> Iterator[SNITextExample]:
+        # 注意：对于分割后的 train/val，我们需要保证 seed 一致，这样 shuffle 的顺序才一致，才能正确互斥分割
         ds = _load_dataset_safe(self.dataset_name, split=self.split, streaming=True, seed=self.seed, shuffle_buffer=self.shuffle_buffer)
+        
         count = 0
+        total_seen = 0 # 记录总共流过多少条符合 task 的数据
+        
         for ex in ds:
             tname = ex.get("task_name", "")
             if tname not in self.task_names:
                 continue
+            
+            # --- 新增：80/20 分割逻辑 ---
+            # 使用 total_seen 计数器进行模运算分割
+            is_val_slot = (total_seen % 10) >= 8  # 8, 9 是验证位 (20%)
+            total_seen += 1
+
+            if self.subsample_mode == "train_80":
+                if is_val_slot: continue # 如果是验证位，训练集跳过
+            elif self.subsample_mode == "val_20":
+                if not is_val_slot: continue # 如果不是验证位，验证集跳过
+            # ---------------------------
+
             definition = ex.get("definition", "")
             inputs = ex.get("inputs", "")
             targets = ex.get("targets", "")
             prompt = build_prompt(definition, inputs)
             target = (targets or "").strip()
             yield SNITextExample(task_name=tname, prompt=prompt, target=target)
+            
             count += 1
             if self.max_examples is not None and count >= self.max_examples:
                 break
@@ -401,34 +420,48 @@ def make_sni_client_loaders(
     persistent_workers = num_workers > 0
 
     for cid, tasks in client_task_map.items():
-        train_ds = SNIIterable(dataset_name, "train", tasks, tokenizer, seq_len, seed=seed+cid, max_examples=train_max_examples)
-        val_ds = SNIIterable(dataset_name, "validation", tasks, tokenizer, seq_len, seed=seed+cid+10_000, max_examples=eval_max_examples, shuffle_buffer=2_000)
-        test_ds = SNIIterable(dataset_name, "test", tasks, tokenizer, seq_len, seed=seed+cid+20_000, max_examples=eval_max_examples, shuffle_buffer=2_000)
+        # --- 修改重点：Train 和 Val 都读取 HF 的 'train' split，但通过 subsample_mode 互斥分割 ---
+        
+        # 训练集：取 'train' split 的 80%
+        train_ds = SNIIterable(
+            dataset_name, "train", tasks, tokenizer, seq_len, 
+            seed=seed+cid, 
+            max_examples=train_max_examples,
+            subsample_mode="train_80" 
+        )
+        
+        # 验证集：取 'train' split 的 剩余 20%
+        # 注意：使用相同的 seed+cid 确保 shuffle 顺序一致，从而保证分割互斥
+        val_ds = SNIIterable(
+            dataset_name, "train", tasks, tokenizer, seq_len, 
+            seed=seed+cid, 
+            max_examples=eval_max_examples, 
+            shuffle_buffer=2_000,
+            subsample_mode="val_20"
+        )
+        
+        # 测试集：保持原样，读取 HF 的 'test' split (如果有的话)，或者也可以设为 'validation'
+        test_ds = SNIIterable(
+            dataset_name, "test", tasks, tokenizer, seq_len, 
+            seed=seed+cid+20_000, 
+            max_examples=eval_max_examples, 
+            shuffle_buffer=2_000,
+            subsample_mode="all"
+        )
 
         collate_fn = lambda b, pid=pad_id: pad_collate(b, pid)
+        
         train_loader = DataLoader(
-            train_ds,
-            batch_size=micro_batch,
-            collate_fn=collate_fn,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            persistent_workers=persistent_workers,
+            train_ds, batch_size=micro_batch, collate_fn=collate_fn,
+            num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent_workers,
         )
         val_loader = DataLoader(
-            val_ds,
-            batch_size=micro_batch,
-            collate_fn=collate_fn,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            persistent_workers=persistent_workers,
+            val_ds, batch_size=micro_batch, collate_fn=collate_fn,
+            num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent_workers,
         )
         test_loader = DataLoader(
-            test_ds,
-            batch_size=micro_batch,
-            collate_fn=collate_fn,
-            num_workers=num_workers,
-            pin_memory=pin_memory,
-            persistent_workers=persistent_workers,
+            test_ds, batch_size=micro_batch, collate_fn=collate_fn,
+            num_workers=num_workers, pin_memory=pin_memory, persistent_workers=persistent_workers,
         )
 
         loaders[cid] = (train_loader, val_loader, test_loader)

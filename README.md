@@ -35,7 +35,7 @@ You can verify fields in the dataset viewer on HF.
   #### --dataset_name Muennighoff/natural-instructions \
 
 ```bash
-python run_fed.py \
+nohup python run_fed.py \
   --model_name Qwen/Qwen2.5-0.5B-Instruct \
   --dataset_name ./natural-instructions \
   --streaming 1 \
@@ -49,12 +49,12 @@ python run_fed.py \
   --use_4bit 1 \
   --seq_len 2048 \
   --eval_every 1 \
-  --log_dir runs/exp6
+  --log_dir runs/exp7 > runs/exp7/output.log 2>&1 &
 ```
 
 ## Run local baselines (for negative transfer)
 ```bash
-python run_local_baselines.py \
+nohup python run_local_baselines.py \
   --model_name Qwen/Qwen2.5-0.5B-Instruct \
   --dataset_name ./natural-instructions \
   --streaming 1 \
@@ -64,7 +64,7 @@ python run_local_baselines.py \
   --tasks_per_category 5 \
   --total_steps 100 \
   --use_4bit 1 \
-  --out_json runs/exp1/local_baselines.json
+  --out_json runs/exp1/local_baselines.json > runs/fedavg_baseline/output.log 2>&1 &
 ```
 
 Then re-run `run_fed.py` with:
@@ -91,7 +91,7 @@ python -m scripts.plot_paper_figure \
 ```
 
 ```bash
-nohup python run_fedavg.py --model_name Qwen/Qwen2.5-0.5B-Instruct --num_clients 5 --keyword_categories QA_Silo Logic_Reasoning_Silo Sentiment_Silo Generation_Silo Language_Trans_Silo --tasks_per_category 5 --log_dir runs/fedavg_baseline1 > runs/fedavg_baseline/output.log 2>&1 &
+nohup python run_fedavg.py --model_name Qwen/Qwen2.5-0.5B-Instruct --num_clients 5 --keyword_categories QA_Silo Logic_Reasoning_Silo Categorization_Silo Sentiment_Silo Generation_Silo --tasks_per_category 10 --log_dir runs/fedavg_baseline1 > runs/fedavg_baseline/output.log 2>&1 &
 ```
 
 QA_Silo Logic_Reasoning_Silo Sentiment_Silo Generation_Silo Language_Trans_Silo

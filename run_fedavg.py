@@ -158,8 +158,8 @@ def main():
 
         # 每轮评估
         for client in clients:
-            gen = client.evaluate_generation(server.global_bank, torch.tensor([1.0]), [], split="train")
-            ppl = client.evaluate_ppl(server.global_bank, torch.tensor([1.0]), [], split="train")
+            gen = client.evaluate_generation(server.global_bank, torch.tensor([1.0]), [], split="val")
+            ppl = client.evaluate_ppl(server.global_bank, torch.tensor([1.0]), [], split="val")
             logger.log({"round": rnd, "client_id": client.client_id, "rougeL": gen["rougeL"], "em": gen["em"], "ppl": ppl["ppl"]})
             print(f"[FedAvg c{client.client_id}] ROUGE-L={gen['rougeL']:.3f} EM={gen['em']:.3f} PPL={ppl['ppl']:.2f}")
 
