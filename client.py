@@ -105,10 +105,22 @@ class Client:
                     attention_mask=batch["attention_mask"],
                     labels=batch["labels"],
                 )
-                loss_val = float(out.loss.detach().cpu())
-                if not math.isfinite(loss_val):
-                    print(f"[WARN][Client {self.client_id}] probe loss non-finite for expert {k}: {loss_val}")
-                    loss_val = 1e6
+                loss_val = out.loss
+                if torch.isnan(loss_val) or torch.isinf(loss_val):
+                    # 检查是否是因为 labels 全是 -100 导致的
+                    valid_tokens = (batch["labels"] != -100).sum()
+                    if valid_tokens == 0:
+                        print(f"[WARN][Client {self.client_id}] Batch has NO valid labels (all -100). Skipping.")
+                        continue # 跳过这个 batch，不计入 loss
+                    else:
+                        print(f"[WARN][Client {self.client_id}] Loss is NaN/Inf but labels are valid! Expert {k} initialization might be broken.")
+                        loss_val = 1e6 # 设为一个惩罚值
+                else:
+                    loss_val = float(loss_val.detach().cpu())
+                # --- 修改结束 ---
+                # if not math.isfinite(loss_val):
+                #     print(f"[WARN][Client {self.client_id}] probe loss non-finite for expert {k}: {loss_val}")
+                #     loss_val = 1e6
                 tot_loss += loss_val
                 n += 1
             losses[k] = tot_loss / max(n, 1)

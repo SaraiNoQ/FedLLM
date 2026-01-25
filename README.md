@@ -41,8 +41,8 @@ python run_fed.py \
   --streaming 1 \
   --num_clients 5 \
   --client_task_mode keyword \
-  --keyword_categories QA_Silo Logic_Reasoning_Silo Sentiment_Silo Generation_Silo Language_Trans_Silo \
-  --tasks_per_category 5 \
+  --keyword_categories QA_Silo Logic_Reasoning_Silo Categorization_Silo Sentiment_Silo Generation_Silo \
+  --tasks_per_category 10 \
   --num_rounds 10 \
   --k_init 3 --k_max 12 \
   --top_m 2 \
@@ -91,7 +91,7 @@ python -m scripts.plot_paper_figure \
 ```
 
 ```bash
-nohup python run_fedavg.py --model_name Qwen/Qwen2.5-0.5B-Instruct --num_clients 5 --keyword_categories QA_Silo Logic_Reasoning_Silo Sentiment_Silo Generation_Silo Language_Trans_Silo --tasks_per_category 5 --log_dir runs/fedavg_baseline > runs/fedavg_baseline/output.log 2>&1 &
+nohup python run_fedavg.py --model_name Qwen/Qwen2.5-0.5B-Instruct --num_clients 5 --keyword_categories QA_Silo Logic_Reasoning_Silo Sentiment_Silo Generation_Silo Language_Trans_Silo --tasks_per_category 5 --log_dir runs/fedavg_baseline1 > runs/fedavg_baseline/output.log 2>&1 &
 ```
 
 QA_Silo Logic_Reasoning_Silo Sentiment_Silo Generation_Silo Language_Trans_Silo

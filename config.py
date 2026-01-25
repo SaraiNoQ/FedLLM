@@ -45,7 +45,7 @@ class FedVEMoEConfig:
 
     # open-world management
     birth_patience: int = 2
-    birth_reject_rate: float = 0.4
+    birth_reject_rate: float = 0.1
     reject_conf_threshold: float = 0.45   # if max_k r_{i,k} < threshold => client is "rejected"
     prune_patience: int = 3
     prune_util_threshold: float = 0.02    # utilization fraction under which prune can trigger

@@ -89,12 +89,18 @@ REFINED_MAPPING = {
 }
 
 def classify_task_by_definition(defn: str, tname: str) -> str:
-    """优化后的分类逻辑：优先根据任务名称(tname)进行语义聚类"""
-    text = (tname + " " + defn).lower()
+    """
+    修改后的逻辑：完全参照 dataset_test.py，仅根据任务名称 (tname) 进行关键词聚类。
+    不再合并 definition，以避免 definition 中的通用词汇误导分类。
+    """
+    if not tname:
+        return "General_Silo"
+        
+    tname_lower = tname.lower()
     
     # 按照 REFINED_MAPPING 的顺序进行匹配
     for silo, keywords in REFINED_MAPPING.items():
-        if any(kw in text for kw in keywords):
+        if any(kw in tname_lower for kw in keywords):
             return silo
     
     return "General_Silo"
@@ -105,7 +111,7 @@ def scan_and_pool_tasks(
     target_categories: Sequence[str],
     min_tasks_per_category: int,
     seed: int = 42,
-    max_scan_examples: int = 150_000,
+    max_scan_examples: int = 10_000_000,
 ) -> Dict[str, List[str]]:
     """
     Scans the dataset and buckets unique task_names into the 10 categories.
